@@ -1,0 +1,304 @@
+#Plotting and looking at in/out/still directiosn for exCAM matched data and the impacts of temperature
+
+ios_temp <- matched_df %>%
+  # keep only in/out activity
+  filter(dir %in% c("in", "out", "still")) %>%
+  group_by(unit, bee_id, datenum) %>%
+  summarize(
+    activity = n(),                          
+    outer_temp_mean = mean(outer_temp, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+#Activity trends, units combined
+ggplot(ios_temp, aes(x = outer_temp_mean, y = activity)) + 
+  geom_smooth(alpha = 0.3) +
+  labs(
+    title = "Activty Trend Across all units in relation to temperature",
+    x = "Temperature (°C)",
+    y = "Activity Count"
+  )
+
+# Activity trends, units separated out
+ggplot(ios_temp, aes(x = outer_temp_mean, y = activity, color = unit)) + 
+  geom_smooth(alpha = 0.3, size = 1) +
+  labs(
+    title = "Activty Trends for each Unit in relation to temperature - IOS",
+    x = "Temperature (°C)",
+    y = "Activity Count",
+    color = "Unit"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.text =  element_text(size = 6),
+    legend.title = element_text(size = 7)
+  )
+
+ggplot(ios_temp, aes(x = unit, y = activity)) +
+  geom_boxplot()
+
+ggplot(ios_temp, aes(x = unit, y = activity)) +
+  stat_summary(fun = mean, geom = "point", color = "red", size = 3) +  # mean point
+  stat_summary(fun.data = mean_sdl, geom = "errorbar", width = 0.2, color = "red") + # ±1 SD
+  geom_boxplot(alpha = 0.5) +
+  labs(title = "Activity per Unit with Mean ± SD - IOS") +
+  theme_minimal()
+
+#--- Plotting Activity (binned) across Julian Day and Temperature
+
+ggplot(ios_temp, aes(x = datenum, y = outer_temp_mean, color = activity)) +
+  geom_point(alpha = 0.7) +
+  facet_wrap(~ unit, scales = "free_y") +
+  scale_color_viridis_c(option = "plasma", limits = c(0, 250), breaks = seq(0, 250, 50)) +
+  labs(
+    title = "Daily Activity vs Temperature per Unit - IOS",
+    x = "Julian Day",
+    y = "Temperature (°C)",
+    color = "Activity Bin"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 6),
+    legend.title = element_text(size = 7)
+  )
+
+ggplot(ios_temp, aes(x = unit, y = activity, color = as.factor(bee_id))) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6, size = 1) + 
+  guides(color = guide_legend(ncol = 3)) +
+  labs(title = "Activity Distribution of active bees per Unit - IOS", x = "Unit", y = "Activity", color = "Bee ID") +
+  theme_minimal()
+
+ggplot(subset(ios_temp, unit == "helios"),
+       aes(x = bee_id, y = activity, color = as.factor(bee_id))) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) +
+  geom_jitter(width = 0.2, alpha = 0.6, size = 1) +
+  labs(
+    title = "Activity per Bee in Helios Unit - IOS",
+    x = "Bee ID",
+    y = "Activity"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  # removes the legend
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8)  # readable x-axis labels
+  )
+
+ggplot(subset(ios_temp, unit == "osmia3"),
+       aes(x = bee_id, y = activity, color = as.factor(bee_id))) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) +
+  geom_jitter(width = 0.2, alpha = 0.6, size = 1) +
+  labs(
+    title = "Activity per Bee in osmia3 Unit - IOS",
+    x = "Bee ID",
+    y = "Activity"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  # removes the legend
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8)  # readable x-axis labels
+  )
+
+ggplot(subset(ios_temp, unit == "osmia4"),
+       aes(x = bee_id, y = activity, color = as.factor(bee_id))) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) +
+  geom_jitter(width = 0.2, alpha = 0.6, size = 1) +
+  labs(
+    title = "Activity per Bee in osmia4 Unit - IOS",
+    x = "Bee ID",
+    y = "Activity"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  # removes the legend
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8)  # readable x-axis labels
+  )
+
+ggplot(subset(ios_temp, unit == "megachilidae"),
+       aes(x = bee_id, y = activity, color = as.factor(bee_id))) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) +
+  geom_jitter(width = 0.2, alpha = 0.6, size = 1) +
+  labs(
+    title = "Activity per Bee in megachilidae Unit - IOS",
+    x = "Bee ID",
+    y = "Activity"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  # removes the legend
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8)  # readable x-axis labels
+  )
+#Aggregate unit activity
+daily_activity_unit_ios <- ios_temp %>%
+  group_by(unit, day_bin = floor(datenum)) %>%   # bin by Julian day
+  summarize(
+    avg_temp = mean(outer_temp_mean, na.rm = TRUE),   # average temperature per day
+    avg_activity = mean(activity, na.rm = TRUE),      # average activity per day
+    .groups = "drop"
+  )
+#Line Graph with weighted dots
+ggplot(daily_activity_unit_ios, aes(x = day_bin, y = avg_temp, color = unit, group = unit)) +
+  geom_line(size = 1) +                                   
+  geom_point(aes(size = avg_activity), alpha = 0.7) +     
+  scale_color_viridis_d(option = "turbo") +              
+  labs(
+    title = "Average Temperature and Activity per Unit Across Days - IOS",
+    x = "Julian Day",
+    y = "Average Temperature (°C)",
+    color = "Unit",
+    size = "Avg Activity"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, size = 6, hjust = 1),
+    axis.text.y = element_text(size = 6),
+    legend.text = element_text(size = 6),
+    legend.title = element_text(size = 7)
+  )
+
+
+#Line Graph - average Activity per Unit Across Julian Days
+#Average Activiyt per unit
+ggplot(daily_activity_unit_ios, aes(x = day_bin, y = avg_activity, color = unit, group = unit)) +
+  geom_line(size = 1) +                     
+  geom_point(alpha = 0.7, size = 2) +      
+  scale_color_viridis_d(option = "turbo") + 
+  labs(
+    title = "Average Activity per Unit Across Days - IOS",
+    x = "Julian Day",
+    y = "Average Activity",
+    color = "Unit"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, size = 6, hjust = 1),
+    axis.text.y = element_text(size = 6),
+    legend.text = element_text(size = 6),
+    legend.title = element_text(size = 7)
+  )
+
+#-------------------------------------------------------------------------------
+# Average activity per unit per temperature (All bees in the unit)
+unit_summary_all <- ios_temp %>%
+  mutate(temp_bin = cut(outer_temp_mean, breaks = seq(0, 50, 1))) %>%  
+  group_by(unit, temp_bin) %>%
+  summarize(
+    mean_activity = mean(activity, na.rm = TRUE),  
+    sd_activity = sd(activity, na.rm = TRUE),      
+    .groups = "drop"
+  )
+#Plot Line with SD as Ribbon - All  units on one plot
+ggplot(unit_summary_all, aes(x = as.numeric(temp_bin), y = mean_activity, color = unit, fill = unit)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = mean_activity - sd_activity,
+                  ymax = mean_activity + sd_activity),
+              alpha = 0.2, color = NA) +                
+  scale_color_viridis_d(option = "turbo") +
+  scale_fill_viridis_d(option = "turbo") +
+  labs(
+    title = "Average Activity per Temperature Across Units - IOS",
+    x = "Temperature (°C)",
+    y = "Average Activity",
+    color = "Unit",
+    fill = "Unit"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 6),
+    axis.text.y = element_text(size = 6),
+    legend.text = element_text(size = 6),
+    legend.title = element_text(size = 7)
+  )
+
+#Plot Line with SD as Ribbon - Units as their own panel
+ggplot(unit_summary_all, aes(x = as.numeric(temp_bin), y = mean_activity)) +
+  geom_line(color = "blue", size = 1) +
+  geom_ribbon(aes(ymin = mean_activity - sd_activity,
+                  ymax = mean_activity + sd_activity),
+              alpha = 0.3, fill = "blue", color = NA) +
+  facet_wrap(~ unit, scales = "free_y") +       
+  labs(
+    title = "Average Activity per Temperature Across Units - IOS",
+    x = "Temperature (°C)",
+    y = "Average Activity"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 6),
+    axis.text.y = element_text(size = 6),
+    strip.text = element_text(size = 8)         
+  )
+
+
+# Average Daily Activity and Average Daily Temperature (units faceted)
+
+# Aggregate daily activity averages and SD per unit
+
+unit_avg_ios <- ios_temp %>%
+  group_by(unit, datenum) %>%
+  summarise(
+    avg_activity = mean(activity, na.rm = TRUE),
+    sd_activity = sd(activity, na.rm = TRUE),
+    avg_temp = mean(outer_temp_mean, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Min/Mac per unit for scaling temperature
+unit_ranges_ios <- unit_avg_ios %>%
+  group_by(unit) %>%
+  summarise(
+    min_activity = min(avg_activity, na.rm = TRUE),
+    max_activity = max(avg_activity, na.rm = TRUE),
+    min_temp = min(avg_temp, na.rm = TRUE),
+    max_temp = max(avg_temp, na.rm = TRUE),
+    .groups = "drop"
+  )
+# Join ranges back and rescale temperature
+unit_avg_ios <- unit_avg_ios %>%
+  left_join(unit_ranges, by = "unit") %>%
+  mutate(
+    scale_factor = (max_activity - min_activity) / (max_temp - min_temp),
+    temp_scaled = (avg_temp - min_temp) * scale_factor + min_activity
+  )
+
+#Define Colors per unit
+unit_colors <- c(
+  "helios" = "#1F78B4",       # blue
+  "osmia3" = "#33A02C",       # green
+  "osmia4" = "#FF7F00",       # orange
+  "megachilidae" = "#E31A1C"  # red
+)
+
+# Facet-wrapped plot with ±SD ribbons
+
+ggplot(unit_avg_ios, aes(x = datenum)) +
+  geom_ribbon(aes(ymin = avg_activity - sd_activity,
+                  ymax = avg_activity + sd_activity,
+                  fill = unit),
+              alpha = 0.2) +
+  geom_line(aes(y = avg_activity, color = unit), size = 1) +
+  geom_line(aes(y = temp_scaled), color = "black", linetype = "dashed", size = 0.8) +
+  facet_wrap(~ unit, scales = "free_y") +
+  scale_color_manual(values = unit_colors) +
+  scale_fill_manual(values = unit_colors) +
+  scale_y_continuous(
+    name = "Average Activity",
+    sec.axis = sec_axis(
+      trans = ~ (. - 0) / 1,  # temporary identity transform
+      name = "Average Daily Temperature (C)"
+    )
+  ) +
+  labs(
+    title = "Average Bee Activity (±SD) and Daily Temperature per Unit - IOS",
+    x = "Julian Day",
+    color = "Unit",
+    fill = "Unit"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 9),
+    legend.position = "bottom"
+  )
+
+
