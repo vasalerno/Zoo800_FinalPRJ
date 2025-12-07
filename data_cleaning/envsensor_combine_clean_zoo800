@@ -1,0 +1,154 @@
+## Script for prepping (cleaning) osmiaCAM environmental data - RPi Sensors / GOVEE 
+#This is a script that takes data collected environmental data from Raspberry Pi Environmental Sensors ( ) and separate GOVEE environmental sensor units. 
+
+#Load library packages
+library(knitr)
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(hms)
+library(stringr)
+library(patchwork)
+
+
+# ---------- Helper: choose a parent directory ----------
+select_parent_dir <- function() {
+  # 1) RStudio picker (best UX)
+  if (requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()) {
+    path <- tryCatch(rstudioapi::selectDirectory(caption = "Select parent folder to analyze"),
+                     error = function(e) NULL)
+    if (!is.null(path)) return(path)
+  }
+  # 2) Tk dialog (cross-platform fallback)
+  if (requireNamespace("tcltk", quietly = TRUE)) {
+    path <- tryCatch(tcltk::tk_choose.dir(caption = "Select parent folder to analyze"),
+                     error = function(e) NULL)
+    if (!is.null(path) && !identical(path, "")) return(path)
+  }
+  # 3) Console prompt
+  path <- readline("Enter the full path to the parent folder: ")
+  path <- path.expand(path)
+  if (nzchar(path) && dir.exists(path)) return(path)
+  
+  stop("No folder selected or the path provided does not exist.")
+}
+
+# ---------- Select parent folder (instead of getwd()) ----------
+parent_dir <- select_parent_dir()
+message("Using parent folder: ", parent_dir)
+
+# ---------- import all RPi Sensor environmental data files  ----------
+env_files <- list.files(
+  path = parent_dir,
+  pattern = "_envLog\\.csv$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+message("Found ", length(env_files), " envLog file(s).")
+if (!length(env_files)) stop("No files matching *_envLog.csv were found under the selected folder.")
+
+# read & combine all RPi environmental sensor data
+all_env_files <- purrr::map_dfr(env_files, function(env_file) {
+  # Read the file (headerless)
+  df <- read.csv(
+    env_file,
+    header = FALSE,
+    col.names = c("datetime", "outer_pressure", "outer_temp", "outer_hum", "inner_temp", "inner_hum"),
+    stringsAsFactors = FALSE
+  )
+  
+  # Add metadata from files 
+  df$file_name <- basename(env_file)
+  parts <- strsplit(basename(env_file), "_")[[1]]
+  df$unit <- parts[1]
+  
+  df
+})
+
+# Preview (optional)
+# View(all_env_files)
+
+# ---------- Format date-time: Julian days since start of 2025 ----------
+ref_time <- "2025-01-01_00-00-00" #Create a reference time to set up Julian Days (Days since 2025-01-01)
+
+# Parse timestamps (underscore between date and time)
+ref_time_num <- parse_date_time(ref_time, "ymd_HMS")
+all_env_files$datenum <- parse_date_time(all_env_files$datetime, "ymd_HMS")
+
+# Convert to numeric days since reference
+all_env_files$datenum <- as.numeric(difftime(all_env_files$datenum, ref_time_num, units = "days"))
+
+# Formattting if needed to rounded datenum (likely unnecessary)
+#all_env_files$julian_hours  <- all_env_files$datenum * 24
+#all_env_files$rounded_datenum <- round(all_env_files$julian_hours, digits = -1) / 24
+
+ggplot(all_env_files, aes(x = rounded_hours, y = outer_temp))+geom_point()
+
+#----------- import and clean GOVEE Environmental Data --------------------------------
+#import all govee environmental data files (same for internal and external camera)
+govee_files <- list.files(
+  path = parent_dir,
+  pattern = "_govee\\.csv$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+message("Found ", length(govee_files), "govee file(s).")
+if (!length(govee_files)) stop("No files matching *_govee.csv were found under the selected folder.")
+
+#read and combine
+all_govee_data <- purrr::map_dfr(govee_files, \(f) {
+  df <- read.csv(f, header = FALSE,
+                 col.names = c("datetime","outer_temp","outer_hum"))
+  df |>
+    dplyr::mutate(
+      file_name = basename(f),
+      unit      = sub("_.*", "", file_name)
+    )
+})
+
+#convert outer_temp column to numeric so that it can be formatted based on reference time
+all_govee_data$outer_temp <- as.numeric(all_govee_data$outer_temp)
+
+#Update unit naming/IDs to match all other data and project consistency (collaborators)
+all_govee_data <- all_govee_data %>%
+  mutate(
+    unit = ifelse(unit == "JimsRanch", "megachilidae", unit)
+  )
+all_govee_data <- all_govee_data %>%
+  mutate(
+    unit = ifelse(unit == "Osmia4", "osmia4", unit)
+  )
+all_govee_data <- all_govee_data %>%
+  mutate(
+    unit = ifelse(unit == "Osmia3", "osmia3", unit)
+  )
+
+# ---------- Format date-time: Julian days since start of 2025 ----------
+ref_time <- "2025-01-01_00-00-00"
+
+# Parse timestamps (underscore between date and time)
+ref_time_num <- parse_date_time(ref_time, "ymd_HMS")
+all_govee_data$datenum <- parse_date_time(
+  all_govee_data$datetime, 
+  orders = c("ymd_HMS", "mdy HM")
+)
+
+# Convert to numeric days since reference
+all_govee_data$datenum <- as.numeric(difftime(all_govee_data$datenum, ref_time_num, units = "days"))
+
+all_govee_data <- all_govee_data %>%
+  mutate(
+    outer_temp = ifelse(unit %in% c("osmia3", "osmia4"),
+                        (outer_temp - 32) * 5/9,
+                        outer_temp)
+  )
+
+# Format timestamps to match behavioral data - commented out as this is built in case it is needed/ change in data use
+#all_govee_data$julian_hours  <- all_govee_data$datenum * 24
+#all_govee_data$rounded_datenum <- round(all_govee_data$julian_hours, digits = -1) / 24
+
+View(all_govee_data)
+
+#Plotting and visual check  
+ggplot(all_govee_data, aes(x = rounded_hours, y = outertemp, color = unit))+geom_point()
+hist(all_govee_data)
