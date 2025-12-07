@@ -1,0 +1,111 @@
+# Script for cleaning and combining forage camera (external_cam) data
+#This data comprises a field experiment that looks at behavior of Osmia lignaria (Blue Orchard Bees) and their behavior at the nest entrance of a supplementary nest block. Using cameras viewing and recording the nest entrances this script cleans and preps outputs from Computer Vision (frame pixel differentiation) analysis of videos.
+
+# load necessary packages
+library(rmarkdown)
+library(knitr)
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(hms)
+library(stringr)
+library(patchwork)
+
+# ---------- Helper: choose a parent directory ----------
+select_parent_dir <- function() {
+  if (requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()) {
+    path <- tryCatch(rstudioapi::selectDirectory(caption = "Select parent folder to analyze"),
+                     error = function(e) NULL)
+    if (!is.null(path)) return(path)
+  }
+  if (requireNamespace("tcltk", quietly = TRUE)) {
+    path <- tryCatch(tcltk::tk_choose.dir(caption = "Select parent folder to analyze"),
+                     error = function(e) NULL)
+    if (!is.null(path) && !identical(path, "")) return(path)
+  }
+  path <- readline("Enter the full path to the parent folder: ")
+  path <- path.expand(path)
+  if (nzchar(path) && dir.exists(path)) return(path)
+  stop("No folder selected or the path provided does not exist.")
+}
+
+# ---------- Select parent folder (instead of getwd()) ----------
+parent_dir <- select_parent_dir()
+message("Using parent folder: ", parent_dir)
+
+# import all forage/external_cam files and combine them into one dataset
+forage_files <- list.files(path = parent_dir, pattern = "ext1._8694_motion.csv$", recursive = TRUE, full.names = TRUE)
+message("Found ", length(forage_files), " motion file(s).")
+if (!length(forage_files)) stop("No files matching *_motion.csv were found under the selected folder.")
+# View(forage_files)
+
+# Read and combine all motion files and create placeholder row for videos with no motion/bee in view
+all_extCam_data <- lapply(forage_files, function(f) {
+  df <- read.csv(f, stringsAsFactors = FALSE)
+  if (nrow(df) == 0) {
+    df <- data.frame(source_file = basename(f))
+  } else {
+    df$source_file <- basename(f)
+  }
+  df
+}) %>%
+  bind_rows()
+
+# create a new file with all the data in one place and add to selected parent directory
+out_path <- file.path(parent_dir, "combined_extCam.csv")
+write.csv(all_extCam_data, file = out_path, row.names = FALSE)
+message("Wrote combined file to: ", out_path)
+
+combined_extCam <- read.csv(out_path, stringsAsFactors = FALSE)
+# View(combined_extCam)
+
+# ---------- Parse components from the source file name ----------
+extract_from_path <- function(paths) {
+  data.frame(
+    unit = str_extract(paths, "(osmia\\d+|helios|megachilidae)"),  # should pull all unit names
+    date = str_extract(paths, "\\d{4}-\\d{2}-\\d{2}"),
+    time = str_extract(paths, "(?<=\\d{4}-\\d{2}-\\d{2}_)\\d{2}-\\d{2}-\\d{2}"),
+    stringsAsFactors = FALSE
+  )
+}
+
+df_components <- extract_from_path(combined_extCam$source_file)
+# View(df_components)
+
+extCam_full <- cbind(combined_extCam, df_components)
+
+# ---------- Time normalization ---------- creating a reference time and date to create a Julian date column for each behavior videso
+ref_time <- "2025-01-01_00-00-00"
+#create a datesting column that has the correctly formatted date (date in format needed)
+extCam_full$datestr <- paste(extCam_full$date, extCam_full$time, sep = "_") # Make single entry for date string
+
+# Use underscore-aware formats
+ref_time_num <- parse_date_time(ref_time, "ymd_HMS")                 # Reference timestamp
+extCam_full$datenum <- parse_date_time(extCam_full$datestr, "ymd_HMS") # File timestamps
+
+# Convert to numeric days since reference
+extCam_full$datenum <- as.numeric(difftime(extCam_full$datenum, ref_time_num, units = "days"))
+extCam_full$frame_time <- extCam_full$start/(15*60*60*24)
+#Add frame numbers to time
+extCam_full$datenum_cont <- extCam_full$datenum+extCam_full$frame_time
+
+#Replace up/down with in/out in direction variable (only needed if the CV outputs are using down/up instead of in/out)
+#extCam_full$direction[extCam_full$direction == 'down'] <- 'out'
+#extCam_full$direction[extCam_full$direction == 'up'] <- 'in'
+
+#Example plot - data checking
+#Plot only 'in' and 'out' data
+#dat_sub <- subset(extCam_full, direction %in% c('in', 'out'))
+
+
+# common base: fixes the color mapping
+base <- ggplot(extCam_full, aes(x = datenum_cont, y = nestLabel, color = dir, shape = unit)) +
+  geom_point() +
+  theme_minimal()
+
+p1 <- base + coord_cartesian(xlim = c(95, 101))
+p2 <- base + coord_cartesian(xlim = c(98.65, 98.75))
+# stack vertically
+
+#Create a graph where p1 is stakced over p2
+p1 / p2
