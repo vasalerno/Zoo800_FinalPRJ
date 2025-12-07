@@ -1,0 +1,63 @@
+## Limitation of script as currently written: The time points cut off for matching is not actually stopping if the match is more than 15 min differences in timestamps ( 0.0104166667 #15 minutes in Julian days). Code fixes are needed to address this. ##
+
+# Load necessary packages
+library(data.table)
+library(ggplot2)
+library(dplyr)
+
+#source("EnvSensor_clean_combine.R")
+#source("ocam_forage_prep.0.2.R")
+
+# ---------- combine environmental data sets ----------
+## convert necessary columns to numeric so that they match each other across data sets 
+all_govee_data <- all_govee_data %>%
+  mutate(outer_temp = as.numeric(outer_temp))
+all_env_files <- all_env_files %>%
+  mutate(outer_hum = as.numeric(outer_hum))
+all_govee_data <- all_govee_data %>%
+  mutate(outer_hum = as.numeric(outer_hum))
+
+## actually combine the two data sets
+combined_env_data2 <- bind_rows(
+  "govee" = all_govee_data,
+  "pi_env" = all_env_files,
+  .id = "sensor_source"
+)
+View(combined_env_data2)
+
+# ---------- convert data frames to data.table so that the large data set is easier to handle (easier than data.frame) ----------
+setDT(combined_env_data2)
+setDT(extCam_full)
+
+# ---------- Set keys to determine how to join data-tables (telling r which columns I want to match by - in this case by each unit and the clostest time point)----------
+setkey(combined_env_data2, unit, datenum)
+setkey(extCam_full, unit, datenum)
+
+# ---------- find the nearest join point ----------
+matched_df <- combined_env_data2[extCam_full, roll = "nearest"]
+matched_df[, time_diff := abs(datenum - datenum_cont)]
+
+#create the maximum gap in time points that will be allowed (15 minutes is relevant given the data stucture)
+max_gap <-  0.0104166667 #15 minutes in Julian days
+matched_df <- matched_df[time_diff <= max_gap]
+
+#Add non-repeating/unique IDs for each bee
+matched_df <- matched_df %>%
+  mutate(
+    bee_id = paste(unit, nestLabel, sep = "_")
+  )
+
+#Quick plot to look at matched data points 
+outertemp_graph <- ggplot(matched_df, aes(y = nestLabel, color = dir, shape = unit)) +
+  geom_point(aes(x = outer_temp, y = nestLabel)) +
+  labs(
+    title = "Nest Entrance Movement",
+    x = "Outer Temperature",
+    y = "Nest Tunnel",
+    color = "Direction"
+  ) +
+  theme_minimal() 
+
+outertemp_graph
+View(matched_df)
+
