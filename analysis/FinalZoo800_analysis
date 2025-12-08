@@ -1,0 +1,60 @@
+#Basic Descriptive Stats
+
+summary(matched_df_clean)
+#Clean data further to get rid of timepoints where night/sunset is affecting CV pixel detection
+matched_df$tod <- matched_df$datenum_cont %% 1
+hist(matched_df$tod)
+matched_df_clean <- subset(matched_df, tod < 0.75)
+hist(matched_df_clean$tod)
+#Basic Summary Stats:
+summary(matched_df_clean)
+matched_df_clean %>%
+  group_by(unit) %>%
+  summarise(
+    temp_min = min(outer_temp, na.rm = TRUE),
+    temp_max = max(outer_temp, na.rm = TRUE),
+    temp_mean = mean(outer_temp, na.rm = TRUE)
+  )
+#Including direction values of In, Out, and Still and creating activity counts per bee_id
+ios_temp <- matched_df_clean %>%
+  # keep only in/out activity
+  filter(dir %in% c("in", "out", "still")) %>%
+  group_by(unit, bee_id, datenum) %>%
+  summarize(
+    activity = n(),
+    outer_temp_mean = mean(outer_temp, na.rm = TRUE),
+    .groups = "drop"
+  )
+#Activity trends, units combined
+ggplot(ios_temp, aes(x = outer_temp_mean, y = activity)) +
+  geom_smooth(alpha = 0.3) +
+  labs(
+    title = "Activty Trend Across all units in relation to temperature",
+    x = "Temperature (°C)",
+    y = "Activity Count"
+  )
+# Activity trends, units separated out
+ggplot(ios_temp, aes(x = outer_temp_mean, y = activity, color = unit)) +
+  geom_smooth(alpha = 0.3, size = 1) +
+  labs(
+    title = "Activty Trends for each Unit in relation to temperature - IOS",
+    x = "Temperature (°C)",
+    y = "Activity Count",
+    color = "Unit"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.text =  element_text(size = 6),
+    legend.title = element_text(size = 7)
+  )
+ggplot(ios_temp, aes(x = unit, y = activity)) +
+  geom_boxplot()
+ggplot(ios_temp, aes(x = unit, y = activity)) +
+  stat_summary(fun = mean, geom = "point", color = "red", size = 3) +  # mean point
+  stat_summary(fun.data = mean_sdl, geom = "errorbar", width = 0.2, color = "red") + # ±1 SD
+  geom_boxplot(alpha = 0.5) +
+  labs(title = "Activity per Unit with Mean ± SD - IOS") +
+  theme_minimal()
+
+
+#
