@@ -57,4 +57,25 @@ ggplot(ios_temp, aes(x = unit, y = activity)) +
   theme_minimal()
 
 
-#
+
+#GLM Models
+#--- Using a GLM Model over LM because GLM allows for the data to be counts and not continuous. I am focusing on the average activity per bee (bee_id) at average temperatures becasue there is so much data
+
+
+glmm_extCam_full <- glmmTMB(
+  activity _ outer_temp_mean + unit +(1|bee_id),
+  data = ios_temp,
+  family = nbinom2()
+)
+
+summary(glmm_extCam_full)
+
+glmm_extCam_noUnit <- glmmTMB(
+  activity _ outer_temp_mean + (1|bee_id),
+  data = ios_temp,
+  family = nbinom2()
+)
+
+#use an ANOVA to look at whether unit matters for trend in behavior
+anova(glmm_extCam_full, glmm_extCam_noUnit
+
